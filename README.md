@@ -29,10 +29,10 @@ Injects trainable low-rank matrices into the Transformer layers (specifically th
 * target `q_proj`, `v_proj`
 * Update weights via $\Delta W = A \times B$, where $A$ and $B$ are low-rank.
 
-### 2. Adapters
-Injects small bottleneck layers after the Feed-Forward Network (FFN) or Attention layers.
-* **Architecture:** Down-projection $\rightarrow$ Non-linearity $\rightarrow$ Up-projection.
-* **Implementation:** Using `adapter-transformers` or `PEFT` library integration.
+### 2. IA³ (Infused Adapter by Inhibiting and Amplifying Inner Activations)
+Rescales attention keys, values, and FFN intermediate activations with learned vectors — no weight matrices added.
+* **Architecture:** Elementwise rescaling vectors injected at `k_proj`, `v_proj`, and `down_proj`.
+* **Implementation:** Using PEFT `IA3Config` — fewer trainable parameters than LoRA (~0.01% of model).
 
 ---
 
@@ -47,9 +47,9 @@ We use Optuna to maximize the F1-Score. We will run 20 trials per method.
 | **LoRA** | Rank ($r$) | $\{4, 8, 16, 32\}$ | Higher $r$ captures more complexity but increases VRAM. |
 | | Alpha ($\alpha$) | $\{16, 32, 64\}$ | Scaling factor for the learned weights. |
 | | Learning Rate | $[1 \times 10^{-5}, 5 \times 10^{-4}]$ | Critical for convergence speed and stability. |
-| **Adapters**| Bottleneck Dim | $\{32, 64, 128\}$ | Controls the capacity of the bottleneck layer. |
-| | Learning Rate | $[5 \times 10^{-5}, 1 \times 10^{-3}]$ | Adapters often tolerate higher rates than LoRA. |
-| | Dropout | $[0.0, 0.3]$ | Prevents overfitting on the small 5k dataset. |
+| **IA³**     | (schema key) Bottleneck Dim | $\{32, 64, 128\}$ | Kept for Optuna study schema compatibility; IA³ has no bottleneck dim. |
+| | Learning Rate | $[5 \times 10^{-5}, 1 \times 10^{-3}]$ | IA³ rescaling vectors tolerate higher rates. |
+| | Dropout | $[0.0, 0.3]$ | Attention dropout applied on base model layers. |
 
 **Compute Budget:** Total of 40 trials. Estimated 4-6 hours on an NVIDIA L4 (GCP/Colab).
 
@@ -66,21 +66,21 @@ We evaluate the classification performance using the following:
 
 ## Results Table
 
-| Method | Best Hyperparameter Set | Accuracy | Precision | Recall | F1 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Base LLM** | N/A (Zero-Shot) | | | | |
-| **LoRA (FT)** | $r=X, \alpha=Y, lr=Z$ | | | | |
-| **Adapters (FT)** | dim=$A$, lr=$B$, drop=$C$ | | | | |
+| Method | Best Hyperparameter Set | Accuracy | Precision | Recall | F1 | Peak VRAM |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Base LLM** | N/A (Zero-Shot) | | | | | — |
+| **LoRA (FT)** | $r=X, \alpha=Y, lr=Z$ | | | | | |
+| **IA³ (FT)** | $lr=B$, $\text{drop}=C$ | | | | | |
 
 ## Deliverables
 
 ### Models
-* `bdanko/gemma-2b-sentiment-lora`: Best LoRA adapter weights.
-* `bdanko/gemma-2b-sentiment-adapters`: Best Adapter weights.
+* `bdanko/mistral-7b-sentiment-lora`: Best LoRA adapter weights.
+* `bdanko/mistral-7b-sentiment-adapter`: Best IA³ adapter weights.
 
 ### Raw Data
-* `bdanko/peft-sentiment-optuna-study`: Exported CSV of all 40 trials and their respective metrics.
+* `bdanko/peft-sentiment-optuna-study`: HF Dataset — all 40 Optuna trials with metrics, pushed from notebook.
 
 ## Qualitative Analysis
-* **Adapter vs. LoRA:** Comparison of training stability and VRAM usage.
-* **Error Analysis:** Review of 3 samples where the model misclassified sentiment (e.g., sarcasm or double negatives) and how the PEFT methods handled them differently.
+* **IA³ vs. LoRA:** Comparison of per-trial and final-training VRAM usage, and F1 standard deviation across 20 trials as a measure of training stability.
+* **Error Analysis:** Review of 3 samples where both models misclassified sentiment (e.g., sarcasm, double negatives) and how LoRA vs. IA³ predictions differ.
